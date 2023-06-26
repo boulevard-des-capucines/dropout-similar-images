@@ -1,0 +1,46 @@
+[project]
+name = "dataset_processor"
+version = "0.1.0"
+description = "The app removes similar images from a dataset of images"
+readme = "README.md"
+requires-python = ">=3.7"
+
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Topic :: Scientific/Engineering :: Image Processing",
+  "Topic :: Scientific/Engineering :: Image Recognition",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.7",
+  "Programming Language :: Python :: 3.8",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3 :: Only",
+]
+
+dependencies = [
+  "opencv-contrib-python-headless==4.7.0.72",
+  "imutils==0.5.4",
+  "pandas==2.0.2",
+  "matplotlib==3.7"
+]
+
+[project.urls]  # Optional
+"Homepage" = "https://github.com/boulevard-des-capucines/dropout-similar-images"
+
+[project.scripts]
+remove-similar-images = "dataset_processor.bin.remove_similar_images:main"
+
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/dataset_processor"]
+
+[tool.hatch.build.targets.sdist]
+exclude = ["/.github", "/docker"]
