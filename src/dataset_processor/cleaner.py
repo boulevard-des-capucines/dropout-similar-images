@@ -20,6 +20,13 @@ from .image_comparators import \
 class DatasetCleaner:
 
     def __init__(self, dir_path: str, extensions: list) -> None:
+        """Removes similar images from a dataset and saves selected image
+        in an output directory
+
+        Args:
+            dir_path: A dataset directory absolute path
+            extensions: Image extensions to be processed
+        """
 
         self._dir = dir_path
         self._extensions = extensions
@@ -31,22 +38,60 @@ class DatasetCleaner:
             min_imsize_percentile: int,
             min_imsize_scale: float,
             min_contour_area: int,
-            gaussian_blur_radiuses: list,
+            gaussian_blur_radii: list,
             black_mask: list,
             save_images_to: str,
-            save_data_analysis_plots_to: str):
+            save_data_analysis_plots_to: str=None):
+        """Reads the images, selects dissimilar ones, and copies them
+        to the output directory
+
+        Args:
+            min_contour_area_diff :
+                Minimum difference between total contour areas in two images.
+                If difference is smaller than that, the images are supposed
+                to be similar.
+            min_imsize_percentile :
+                To estimate minimum allowable image size
+                we take q-th percentile of all image sizes and multiply it
+                by `min_imsize_scale`. So, usually, `min_imsize_percentile`
+                is something close but not equal to 100 (e.g. 75).
+                It should be in the range [0, 100].
+            min_imsize_scale :
+                Look above comment to the parameter `min_imsize_percentile`.
+                Usually, a reasonable value is a float in the range [0.5, 1.0],
+                but could be any float depending on your data.
+            min_contour_area :
+                Minimum contour area to contribute in a common score.
+                All contours with area smaller than `min_contour_area` are
+                ignored.
+            gaussian_blur_radii :
+                A list of gaussian blur radii to be applied to an image before
+                score estimation.
+            black_mask :
+                Mask to crop a some interior part of an image and make black
+                the other (border) part. Should be a list of 4 integers:
+                [xmin, ymin, xmax, ymax] in percents of the image size.
+            save_images_to :
+                An absoluteb output directory path to save selected dissimilar
+                images to.
+            save_data_analysis_plots_to :
+                An absolute directory path to save some data statistics to.
+
+        Returns : bool
+
+        """
 
         is_processing_successful = False
 
-        blur_radiuses = self._check_and_correct(gaussian_blur_radiuses)
-        if not blur_radiuses:
-            logging.info("No correct gaussian blur radiuses.")
+        blur_radii = self._check_and_correct(gaussian_blur_radii)
+        if not blur_radii:
+            logging.info("No correct gaussian blur radii.")
             return is_processing_successful
 
         logging.info(f"Reading the dataset (direcotry: '{self._dir}')...")
         df = self._get_data(
             min_imsize_percentile, min_imsize_scale,
-            min_contour_area, blur_radiuses, black_mask
+            min_contour_area, blur_radii, black_mask
         )
         if df.empty:
             logging.info("No data is read.")
@@ -57,7 +102,7 @@ class DatasetCleaner:
             "min_imsize_percentile": min_imsize_percentile,
             "min_imsize_scale": min_imsize_scale,
             "min_contour_area": min_contour_area,
-            "gaussian_blur_radiuses": gaussian_blur_radiuses,
+            "gaussian_blur_radii": gaussian_blur_radii,
             "black_mask": black_mask
         }
         self._save_analytics(df, params, save_data_analysis_plots_to)
@@ -83,7 +128,7 @@ class DatasetCleaner:
                   min_imsize_percentile: int,
                   min_imsize_scale: float,
                   min_contour_area: int,
-                  gaussian_blur_radiuses: list,
+                  gaussian_blur_radii: list,
                   black_mask: list) -> pd.DataFrame:
 
         min_imsizes = self._get_min_imsize(min_imsize_percentile)
@@ -118,17 +163,10 @@ class DatasetCleaner:
                 if prev_img is None:
                     prev_img = np.zeros_like(current_img)
 
-                is_calculated, score = self._get_score(
+                score = self._get_score(
                     prev_img, current_img,
-                    min_contour_area, gaussian_blur_radiuses, black_mask
+                    min_contour_area, gaussian_blur_radii, black_mask
                 )
-                if not is_calculated:
-                    logging.warning(
-                        f"Can't calculate the score for '{fname}'. "
-                        f"Image size: {current_img.shape}. "
-                        f"Continue..."
-                    )
-                    continue
 
                 data["camera_id"].append(cam_id)
                 data["timestamp"].append(timestamp)
@@ -163,10 +201,8 @@ class DatasetCleaner:
                    prev_img: np.array,
                    next_img: np.array,
                    min_contour_area: int,
-                   gaussian_blur_radiuses: list,
-                   black_mask: list) -> (bool, typing.Optional[int]):
-
-        success, score = False, None
+                   gaussian_blur_radii: list,
+                   black_mask: list) -> int:
 
         if prev_img.shape != next_img.shape:
             prev_img_scaled = cv2.resize(
@@ -177,20 +213,17 @@ class DatasetCleaner:
             prev_img_scaled = prev_img
 
         prepared_prev = preprocess_image_change_detection(
-            prev_img_scaled, gaussian_blur_radiuses, black_mask
+            prev_img_scaled, gaussian_blur_radii, black_mask
         )
         prepared_next = preprocess_image_change_detection(
-            next_img, gaussian_blur_radiuses, black_mask
+            next_img, gaussian_blur_radii, black_mask
         )
 
-        if prepared_prev.shape == prepared_next.shape:
+        score, _, _ = compare_frames_change_detection(
+            prepared_prev, prepared_next, min_contour_area
+        )
 
-            score, _, _ = compare_frames_change_detection(
-                prepared_prev, prepared_next, min_contour_area
-            )
-            success = True
-
-        return success, score
+        return score
 
     def _get_min_imsize(self, percentile: int) -> dict:
 
@@ -212,18 +245,18 @@ class DatasetCleaner:
 
         return min_sizes
 
-    def _check_and_correct(self, gaussian_blur_radiuses) -> list:
+    def _check_and_correct(self, gaussian_blur_radii) -> list:
 
-        if any([r <= 0 for r in gaussian_blur_radiuses]):
+        if any([r <= 0 for r in gaussian_blur_radii]):
             logging.warning(
                 f"The gaussian blur radius should be positive. "
                 f"Some of the passed values are negative or zero. "
                 f"All negative or zero values won't be used. Continue..."
             )
 
-        positive_blur_radiuses = [r for r in gaussian_blur_radiuses if r > 0]
+        positive_blur_radii = [r for r in gaussian_blur_radii if r > 0]
 
-        for i, r in enumerate(positive_blur_radiuses):
+        for i, r in enumerate(positive_blur_radii):
 
             if r % 2 == 0:
                 logging.warning(
@@ -231,9 +264,9 @@ class DatasetCleaner:
                     f"The value '{r}' will be replaced with '{r + 1}'. "
                     f"Continue..."
                 )
-                positive_blur_radiuses[i] += 1
+                positive_blur_radii[i] += 1
 
-        return positive_blur_radiuses
+        return positive_blur_radii
 
     def _save_images(self, df: pd.DataFrame, dir_path: str):
 
