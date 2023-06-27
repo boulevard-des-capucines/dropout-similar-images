@@ -29,7 +29,7 @@ docker build -t dataset-proc-img -f docker/Dockerfile .
 ```
 
 ## 1.2 Run the app
-After that, youu can run the container with app launched. Fot that, run 
+After that, you can run the container with app launched. Fot that, run 
 a command like following
 ```shell
 docker run \
@@ -99,7 +99,7 @@ I noticed the following points:
 * there are two formats of timestamp -- timestamps in milliseconds and 
 datetimes up to seconds
 * the majority of frames looks like similar images
-* some frames contains paving slabs, that's why it seems reasonable to adjust
+* some frames contain paving slabs, that's why it seems reasonable to adjust
 gussian blur  radii to blur slabs (sizes 11 and 15 looks good)
 * there are two bad images -- one is too small (the size is 6x10), another one 
 couldn't be read
